@@ -1,0 +1,75 @@
+import anthropic
+import json
+from datetime import datetime
+import pytz
+
+
+class ClaudeAnalyst:
+
+    def __init__(self, api_key: str):
+        self.client = anthropic.Anthropic(api_key=api_key)
+        self.model  = "claude-sonnet-4-20250514"
+
+    def create_briefing(self, kurse: dict, portfolio: list, news: list) -> dict:
+        tz  = pytz.timezone("Europe/Berlin")
+        now = datetime.now(tz)
+
+        kurse_text = "\n".join([
+            f"- {k}: {v['price']} ({v['change_pct']:+.1f}%)"
+            for k, v in kurse.items() if v["price"] > 0
+        ])
+
+        portfolio_text = json.dumps(portfolio, ensure_ascii=False, indent=2)
+        news_text      = "\n".join([f"- {n['title']}" for n in news[:6]])
+
+        prompt = f"""Du bist ein erfahrener Day-Trader in Muenchen.
+Heute ist {now.strftime('%A, %d.%B %Y')} um {now.strftime('%H:%M')} MEZ.
+
+KURSE:
+{kurse_text}
+
+POSITIONEN:
+{portfolio_text}
+
+NEWS:
+{news_text}
+
+Erstelle ein Trading-Briefing auf Deutsch als JSON:
+{{
+    "marktlage": "BULLISCH oder BAERISCH oder NEUTRAL",
+    "sentiment_score": 0,
+    "makro_zusammenfassung": "2-3 Saetze",
+    "top_3_erkenntnisse": ["1", "2", "3"],
+    "positionen_status": [
+        {{"name": "Name", "aktion": "HALTEN oder VERKAUFEN oder KAUFEN", "begruendung": "kurz", "dringlichkeit": "HOCH oder MITTEL oder NIEDRIG"}}
+    ],
+    "trade_ideen": [
+        {{"asset": "Name", "richtung": "LONG oder SHORT", "einstieg": "Kurs", "ziel": "Kurs", "stop": "Kurs", "begruendung": "kurz"}}
+    ],
+    "wichtigste_warnung": "Warnung",
+    "tagesausblick": "Ausblick"
+}}
+
+Nur JSON antworten. Kein Markdown."""
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            text = response.content[0].text.strip()
+            text = text.replace("```json", "").replace("```", "").strip()
+            return json.loads(text)
+        except Exception as e:
+            print(f"Claude Fehler: {e}")
+            return {
+                "marktlage": "NEUTRAL",
+                "sentiment_score": 0,
+                "makro_zusammenfassung": "Analyse nicht verfuegbar.",
+                "top_3_erkenntnisse": [],
+                "positionen_status": [],
+                "trade_ideen": [],
+                "wichtigste_warnung": "System-Fehler",
+                "tagesausblick": "Keine Analyse"
+            }
