@@ -1,0 +1,86 @@
+import requests
+from datetime import datetime
+import pytz
+
+
+class TelegramBot:
+
+    def __init__(self, token: str, chat_id: str):
+        self.token    = token
+        self.chat_id  = chat_id
+        self.base_url = f"https://api.telegram.org/bot{token}"
+
+    def send(self, text: str) -> bool:
+        try:
+            response = requests.post(
+                f"{self.base_url}/sendMessage",
+                json={"chat_id": self.chat_id, "text": text},
+                timeout=10
+            )
+            print(f"Telegram: {response.status_code}")
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Telegram Fehler: {e}")
+            return False
+
+    def send_briefing(self, briefing: dict, kurse: dict, portfolio: list) -> None:
+        tz  = pytz.timezone("Europe/Berlin")
+        now = datetime.now(tz)
+
+        sentiment = briefing.get("sentiment_score", 0)
+        s_emoji   = "Bullisch" if sentiment > 20 else "Baerisch" if sentiment < -20 else "Neutral"
+
+        # Nachricht 1: Markt
+        msg1  = f"ALPHADESK BRIEFING - {now.strftime('%d.%m.%Y %H:%M')} MEZ\n\n"
+        msg1 += f"Marktlage: {briefing.get('marktlage', 'NEUTRAL')} (Score: {sentiment})\n\n"
+        msg1 += f"Makro:\n{briefing.get('makro_zusammenfassung', '')}\n\n"
+
+        erkenntnisse = briefing.get("top_3_erkenntnisse", [])
+        if erkenntnisse:
+            msg1 += "Top Erkenntnisse:\n"
+            for e in erkenntnisse:
+                msg1 += f"- {e}\n"
+        self.send(msg1)
+
+        # Nachricht 2: Kurse
+        ticker_names = {
+            "^GDAXI": "DAX", "^GSPC": "S&P 500", "^IXIC": "Nasdaq",
+            "NVDA": "Nvidia", "IFX.DE": "Infineon", "RKLB": "Rocket Lab",
+            "META": "Meta", "TSM": "TSMC", "BZ=F": "Brent Oel", "GC=F": "Gold",
+        }
+        msg2 = "AKTUELLE KURSE:\n\n"
+        for ticker, data in kurse.items():
+            if data["price"] == 0:
+                continue
+            name  = ticker_names.get(ticker, ticker)
+            pct   = data["change_pct"]
+            arrow = "+" if pct > 0 else ""
+            msg2 += f"{name}: {data['price']} ({arrow}{pct:.1f}%)\n"
+        self.send(msg2)
+
+        # Nachricht 3: Positionen
+        positionen = briefing.get("positionen_status", [])
+        if positionen:
+            msg3 = "DEINE POSITIONEN:\n\n"
+            for pos in positionen:
+                aktion = pos.get("aktion", "HALTEN")
+                msg3  += f"{aktion}: {pos.get('name', '')}\n"
+                msg3  += f"  -> {pos.get('begruendung', '')}\n\n"
+            self.send(msg3)
+
+        # Nachricht 4: Trade-Ideen
+        ideen = briefing.get("trade_ideen", [])
+        if ideen:
+            msg4 = "TOP TRADE-IDEEN:\n\n"
+            for i, idee in enumerate(ideen[:3], 1):
+                msg4 += f"#{i} {idee.get('asset', '')} {idee.get('richtung', '')}\n"
+                msg4 += f"  Einstieg: {idee.get('einstieg', '')}\n"
+                msg4 += f"  Ziel: {idee.get('ziel', '')} | Stop: {idee.get('stop', '')}\n"
+                msg4 += f"  {idee.get('begruendung', '')}\n\n"
+            self.send(msg4)
+
+        # Nachricht 5: Warnung + Ausblick
+        msg5  = f"WARNUNG: {briefing.get('wichtigste_warnung', '')}\n\n"
+        msg5 += f"AUSBLICK: {briefing.get('tagesausblick', '')}\n\n"
+        msg5 += "AlphaDeskBot - Keine Anlageberatung."
+        self.send(msg5)
