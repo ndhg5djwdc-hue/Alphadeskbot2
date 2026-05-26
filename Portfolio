@@ -1,0 +1,50 @@
+from typing import List, Dict
+
+
+class Portfolio:
+
+    def __init__(self, positionen: List[dict]):
+        self.positionen = positionen
+
+    def get_status(self, kurse: Dict) -> List[dict]:
+        status = []
+        for pos in self.positionen:
+            ticker    = pos.get("ticker", "")
+            kurs_data = kurse.get(ticker, {})
+            kurs      = kurs_data.get("price", 0)
+            if kurs == 0:
+                continue
+
+            pos_status = {
+                "name":   pos["name"],
+                "typ":    pos["typ"],
+                "ticker": ticker,
+                "kurs":   kurs,
+            }
+
+            if pos["typ"] == "ko_long":
+                barriere   = pos.get("barriere", 0)
+                puffer     = kurs - barriere
+                puffer_pct = (puffer / kurs) * 100 if kurs > 0 else 0
+                pos_status.update({
+                    "barriere":   barriere,
+                    "puffer":     round(puffer, 2),
+                    "puffer_pct": round(puffer_pct, 1),
+                    "gefahr":     puffer_pct < 5,
+                })
+
+            elif pos["typ"] == "call":
+                strike = pos.get("strike", 0)
+                pos_status.update({
+                    "strike":   strike,
+                    "itm":      kurs > strike,
+                    "abstand":  round(kurs - strike, 2),
+                    "laufzeit": pos.get("laufzeit", ""),
+                })
+
+            alert_stop = pos.get("alert_stop", 0)
+            if alert_stop and kurs < alert_stop:
+                pos_status["stop_ausgeloest"] = True
+
+            status.append(pos_status)
+        return status
