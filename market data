@@ -1,0 +1,55 @@
+import yfinance as yf
+import requests
+import re
+from typing import Dict, List
+
+
+class MarketData:
+
+    def get_all_prices(self, tickers: List[str]) -> Dict:
+        results = {}
+        try:
+            data = yf.download(
+                tickers,
+                period="2d",
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=True,
+                progress=False
+            )
+            for ticker in tickers:
+                try:
+                    if len(tickers) == 1:
+                        closes = data["Close"]
+                    else:
+                        closes = data[ticker]["Close"]
+                    current  = float(closes.iloc[-1])
+                    previous = float(closes.iloc[-2]) if len(closes) > 1 else current
+                    change   = current - previous
+                    pct      = (change / previous) * 100 if previous != 0 else 0
+                    results[ticker] = {
+                        "ticker":     ticker,
+                        "price":      round(current, 2),
+                        "change":     round(change, 2),
+                        "change_pct": round(pct, 2),
+                    }
+                except Exception as e:
+                    print(f"Fehler {ticker}: {e}")
+                    results[ticker] = {"ticker": ticker, "price": 0, "change": 0, "change_pct": 0}
+        except Exception as e:
+            print(f"Batch Fehler: {e}")
+            for ticker in tickers:
+                results[ticker] = {"ticker": ticker, "price": 0, "change": 0, "change_pct": 0}
+        return results
+
+    def get_news(self) -> List[dict]:
+        news_items = []
+        try:
+            url = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,META,TSM,RKLB&region=US&lang=en-US"
+            response = requests.get(url, timeout=10)
+            titles = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', response.text)
+            for title in titles[:8]:
+                news_items.append({"title": title, "source": "Yahoo Finance"})
+        except Exception as e:
+            print(f"News Fehler: {e}")
+        return news_items
